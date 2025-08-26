@@ -123,15 +123,31 @@ function record_user_login_time($user_login, $user = null) {
         if ($previous_login) {
             update_user_meta($user->ID, 'previous_login', $previous_login);
         }
-        update_user_meta($user->ID, 'last_login', time());
+        update_user_meta($user->ID, 'last_login', current_time('timestamp'));
     }
 }
 add_action('wp_login', 'record_user_login_time', 10, 2);
 
 /*===================================================
+ * Инициализация времени входа для текущей сессии
+ * ================================================== */
+function init_current_session_login_time() {
+    if (is_user_logged_in()) {
+        $user_id = get_current_user_id();
+        $last_login = get_user_meta($user_id, 'last_login', true);
+        
+        // Если нет записи о последнем входе, записываем текущее время
+        if (!$last_login) {
+            update_user_meta($user_id, 'last_login', current_time('timestamp'));
+        }
+    }
+}
+add_action('init', 'init_current_session_login_time');
+
+/*===================================================
  * Информация о времени входа в админ-бар
  * ================================================== */
-/* function add_last_login_to_admin_bar($wp_admin_bar) {
+function add_last_login_to_admin_bar($wp_admin_bar) {
     if (!is_user_logged_in() || !$wp_admin_bar || !is_object($wp_admin_bar)) {
         return;
     }
@@ -143,57 +159,95 @@ add_action('wp_login', 'record_user_login_time', 10, 2);
 
     $last_login = get_user_meta($user_id, 'last_login', true);
     $previous_login = get_user_meta($user_id, 'previous_login', true);
-
-    $wp_admin_bar->add_node([
+    
+    // Создаем основной узел
+    $wp_admin_bar->add_node(array(
         'id'    => 'login_times',
-        'title' => 'Время входа',
-        'href'  => '#'
-    ]);
+        'title' => '<span class="ab-icon dashicons dashicons-clock"></span><span class="ab-label">Время входа</span>',
+        'href'  => false,
+        'meta'  => array(
+            'class' => 'login-times-menu'
+        )
+    ));
 
+    // Добавляем информацию о текущем входе
     if ($last_login && is_numeric($last_login)) {
-        $wp_admin_bar->add_node([
+        $current_time = wp_date('d.m.Y H:i', (int)$last_login);
+        $wp_admin_bar->add_node(array(
             'id'     => 'current_login',
             'parent' => 'login_times',
-            'title'  => 'Текущий вход: ' . wp_date('d.m.Y H:i', (int)$last_login),
-            'href'   => '#'
-        ]);
+            'title'  => 'Текущий вход: ' . $current_time,
+            'href'   => false
+        ));
+    } else {
+        // Если нет данных о текущем входе
+        $wp_admin_bar->add_node(array(
+            'id'     => 'current_login',
+            'parent' => 'login_times',
+            'title'  => 'Текущий вход: только что',
+            'href'   => false
+        ));
     }
 
+    // Добавляем информацию о предыдущем входе
     if ($previous_login && is_numeric($previous_login)) {
-        $wp_admin_bar->add_node([
+        $previous_time = wp_date('d.m.Y H:i', (int)$previous_login);
+        $wp_admin_bar->add_node(array(
             'id'     => 'previous_login',
             'parent' => 'login_times',
-            'title'  => 'Предыдущий вход: ' . wp_date('d.m.Y H:i', (int)$previous_login),
-            'href'   => '#'
-        ]);
+            'title'  => 'Предыдущий вход: ' . $previous_time,
+            'href'   => false
+        ));
+    } else {
+        // Если нет данных о предыдущем входе
+        $wp_admin_bar->add_node(array(
+            'id'     => 'previous_login',
+            'parent' => 'login_times',
+            'title'  => 'Предыдущий вход: нет данных',
+            'href'   => false
+        ));
     }
 }
-add_action('admin_bar_menu', 'add_last_login_to_admin_bar', 999);
+add_action('admin_bar_menu', 'add_last_login_to_admin_bar', 100);
 
+/*===================================================
+ * Стили для админ-бара
+ * ================================================== */
 function add_last_login_styles() {
     if (!is_admin_bar_showing()) {
         return;
     }
     ?>
     <style type="text/css">
-        #wp-admin-bar-login_times .ab-item,
-        #wp-admin-bar-current_login .ab-item,
-        #wp-admin-bar-previous_login .ab-item {
+        #wp-admin-bar-login_times .ab-icon:before {
+            content: "\f469";
+            top: 2px;
+        }
+        #wp-admin-bar-login_times .ab-label {
+            margin-left: 6px;
+        }
+        #wp-admin-bar-login_times > .ab-item,
+        #wp-admin-bar-current_login > .ab-item,
+        #wp-admin-bar-previous_login > .ab-item {
             cursor: default !important;
+            pointer-events: none;
         }
-        #wp-admin-bar-login_times:hover .ab-item {
-            background-color: #32373c !important;
+        #wp-admin-bar-login_times:hover > .ab-item,
+        #wp-admin-bar-current_login:hover > .ab-item,
+        #wp-admin-bar-previous_login:hover > .ab-item {
+            background: transparent !important;
+            color: #a0a5aa !important;
         }
-        #wp-admin-bar-current_login .ab-item:hover,
-        #wp-admin-bar-previous_login .ab-item:hover {
-            background-color: #32373c !important;
+        @media screen and (max-width: 782px) {
+            #wp-admin-bar-login_times .ab-label {
+                display: none;
+            }
         }
     </style>
     <?php
 }
 add_action('wp_head', 'add_last_login_styles');
 add_action('admin_head', 'add_last_login_styles');
-*/
 /*===================================================
  * Удаление ненужных мета-тегов и ссылок
  * ================================================== */
