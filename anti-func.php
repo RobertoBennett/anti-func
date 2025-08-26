@@ -14,7 +14,7 @@
 
 Все функции реализованы безопасно и не конфликтуют между собой. Плагин особенно полезен для разработчиков, которые хотят добавить кастомный функционал без риска сломать сайт. 
  * Author: Robert Bennett
- * Plugin URI: https://yoursite.com/
+ * Plugin URI: https://github.com/RobertoBennett/anti-func
  * Version: 3.0.7
  * Text Domain: Anti-Func
  * ==================================== */
@@ -1531,5 +1531,6 @@ function display_visitor_info() {
     
     return $html;
 }
+
 
 add_shortcode('visitor_info', 'display_visitor_info');
