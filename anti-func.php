@@ -20,6 +20,24 @@
  * ==================================== */
 
 /*===================================================
+ *  Ккод для автоматического перенаправления
+ * ================================================== */
+
+function custom_login_redirect() {
+    // Проверяем, находимся ли мы на странице входа
+    global $pagenow;
+    
+    if ($pagenow == 'wp-login.php' && is_user_logged_in()) {
+        // Проверяем, нет ли специальных параметров (logout, registration и т.д.)
+        if (!isset($_GET['action']) || $_GET['action'] == 'login') {
+            wp_redirect(admin_url());
+            exit();
+        }
+    }
+}
+add_action('init', 'custom_login_redirect');
+
+/*===================================================
  * Управление HLS.js (удаление/подключение)
  * ================================================== */
 function my_deregister_hls_script() {
@@ -110,144 +128,6 @@ class CenterShortcodes {
 
 new CenterShortcodes();
 
-/*===================================================
- * Запись времени входа пользователя
- * ================================================== */
-function record_user_login_time($user_login, $user = null) {
-    if (!$user || !is_object($user)) {
-        $user = get_user_by('login', $user_login);
-    }
-    
-    if ($user && is_object($user) && property_exists($user, 'ID') && !empty($user->ID)) {
-        $previous_login = get_user_meta($user->ID, 'last_login', true);
-        if ($previous_login) {
-            update_user_meta($user->ID, 'previous_login', $previous_login);
-        }
-        update_user_meta($user->ID, 'last_login', current_time('timestamp'));
-    }
-}
-add_action('wp_login', 'record_user_login_time', 10, 2);
-
-/*===================================================
- * Инициализация времени входа для текущей сессии
- * ================================================== */
-function init_current_session_login_time() {
-    if (is_user_logged_in()) {
-        $user_id = get_current_user_id();
-        $last_login = get_user_meta($user_id, 'last_login', true);
-        
-        // Если нет записи о последнем входе, записываем текущее время
-        if (!$last_login) {
-            update_user_meta($user_id, 'last_login', current_time('timestamp'));
-        }
-    }
-}
-add_action('init', 'init_current_session_login_time');
-
-/*===================================================
- * Информация о времени входа в админ-бар
- * ================================================== */
-function add_last_login_to_admin_bar($wp_admin_bar) {
-    if (!is_user_logged_in() || !$wp_admin_bar || !is_object($wp_admin_bar)) {
-        return;
-    }
-
-    $user_id = get_current_user_id();
-    if (!$user_id || !is_numeric($user_id)) {
-        return;
-    }
-
-    $last_login = get_user_meta($user_id, 'last_login', true);
-    $previous_login = get_user_meta($user_id, 'previous_login', true);
-    
-    // Создаем основной узел
-    $wp_admin_bar->add_node(array(
-        'id'    => 'login_times',
-        'title' => '<span class="ab-icon dashicons dashicons-clock"></span><span class="ab-label">Время входа</span>',
-        'href'  => false,
-        'meta'  => array(
-            'class' => 'login-times-menu'
-        )
-    ));
-
-    // Добавляем информацию о текущем входе
-    if ($last_login && is_numeric($last_login)) {
-        $current_time = wp_date('d.m.Y H:i', (int)$last_login);
-        $wp_admin_bar->add_node(array(
-            'id'     => 'current_login',
-            'parent' => 'login_times',
-            'title'  => 'Текущий вход: ' . $current_time,
-            'href'   => false
-        ));
-    } else {
-        // Если нет данных о текущем входе
-        $wp_admin_bar->add_node(array(
-            'id'     => 'current_login',
-            'parent' => 'login_times',
-            'title'  => 'Текущий вход: только что',
-            'href'   => false
-        ));
-    }
-
-    // Добавляем информацию о предыдущем входе
-    if ($previous_login && is_numeric($previous_login)) {
-        $previous_time = wp_date('d.m.Y H:i', (int)$previous_login);
-        $wp_admin_bar->add_node(array(
-            'id'     => 'previous_login',
-            'parent' => 'login_times',
-            'title'  => 'Предыдущий вход: ' . $previous_time,
-            'href'   => false
-        ));
-    } else {
-        // Если нет данных о предыдущем входе
-        $wp_admin_bar->add_node(array(
-            'id'     => 'previous_login',
-            'parent' => 'login_times',
-            'title'  => 'Предыдущий вход: нет данных',
-            'href'   => false
-        ));
-    }
-}
-add_action('admin_bar_menu', 'add_last_login_to_admin_bar', 100);
-
-/*===================================================
- * Стили для админ-бара
- * ================================================== */
-function add_last_login_styles() {
-    if (!is_admin_bar_showing()) {
-        return;
-    }
-    ?>
-    <style type="text/css">
-        #wp-admin-bar-login_times .ab-icon:before {
-            content: "\f469";
-            top: 2px;
-        }
-        #wp-admin-bar-login_times .ab-label {
-            margin-left: 6px;
-        }
-        #wp-admin-bar-login_times > .ab-item,
-        #wp-admin-bar-current_login > .ab-item,
-        #wp-admin-bar-previous_login > .ab-item {
-            cursor: default !important;
-            pointer-events: none;
-        }
-        #wp-admin-bar-login_times:hover > .ab-item,
-        #wp-admin-bar-current_login:hover > .ab-item,
-        #wp-admin-bar-previous_login:hover > .ab-item {
-            background: transparent !important;
-            color: #a0a5aa !important;
-        }
-        @media screen and (max-width: 782px) {
-            #wp-admin-bar-login_times .ab-label {
-                display: none;
-            }
-        }
-    </style>
-    <?php
-}
-add_action('wp_head', 'add_last_login_styles');
-add_action('admin_head', 'add_last_login_styles');
 /*===================================================
  * Удаление ненужных мета-тегов и ссылок
  * ================================================== */
@@ -372,67 +252,6 @@ $options_to_disable = [
 foreach ($options_to_disable as $option) {
     update_option($option, 'no');
 }
-
-/*===================================================
- * Получение реального IP-адреса пользователя
- * ================================================== */
-function get_user_real_ip() {
-    $ip_keys = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_FORWARDED', 'HTTP_X_CLUSTER_CLIENT_IP', 'HTTP_FORWARDED_FOR', 'HTTP_FORWARDED', 'REMOTE_ADDR'];
-    
-    foreach ($ip_keys as $key) {
-        if (array_key_exists($key, $_SERVER) && !empty($_SERVER[$key])) {
-            $ip = $_SERVER[$key];
-            if (strpos($ip, ',') !== false) {
-                $ip = trim(explode(',', $ip)[0]);
-            }
-            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-                return $ip;
-            }
-        }
-    }
-    
-    return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-}
-
-/*===================================================
- * Запрет множественных регистраций с одного IP
- * ================================================== */
-function prevent_multiple_registrations_from_same_ip($errors, $sanitized_user_login, $user_email) {
-    global $wpdb;
-    
-    $user_ip = get_user_real_ip();
-    
-    if (!filter_var($user_ip, FILTER_VALIDATE_IP)) {
-        return $errors;
-    }
-    
-    $existing_users = $wpdb->get_var($wpdb->prepare(
-        "SELECT COUNT(*) FROM {$wpdb->usermeta} WHERE meta_key = 'registration_ip' AND meta_value = %s",
-        $user_ip
-    ));
-    
-    if ($existing_users > 0) {
-        $errors->add('ip_already_registered', 
-            __('С этого IP-адреса уже была выполнена регистрация. Множественные регистрации запрещены.', 'textdomain')
-        );
-    }
-    
-    return $errors;
-}
-add_filter('registration_errors', 'prevent_multiple_registrations_from_same_ip', 10, 3);
-
-function save_user_registration_ip($user_id) {
-    if (!is_numeric($user_id) || $user_id <= 0) {
-        return;
-    }
-    
-    $user_ip = get_user_real_ip();
-    
-    if (filter_var($user_ip, FILTER_VALIDATE_IP)) {
-        update_user_meta($user_id, 'registration_ip', $user_ip);
-    }
-}
-add_action('user_register', 'save_user_registration_ip');
 
 /*===================================================
  * Блокировка специфических email и доменов
@@ -1132,21 +951,21 @@ function site_statistics_shortcode($atts) {
         $output .= '<p><i class="dashicons dashicons-tag"></i> Меток: ' . $tag_count . '</p>';
     }
 
-    if ($atts['show_users'] === 'true') {
+    /*if ($atts['show_users'] === 'true') {
         $user_count = count_users();
         $output .= '<p><i class="dashicons dashicons-admin-users"></i> Пользователей: ' . $user_count['total_users'] . '</p>';
-    }
+    }*/
     
     if ($atts['show_comments'] === 'true') {
         $comments_count = wp_count_comments();
         $output .= '<p><i class="dashicons dashicons-admin-comments"></i> Комментариев: ' . $comments_count->approved . '</p>';
     }
     
-    if ($atts['show_today_users'] === 'true') {
+    /*if ($atts['show_today_users'] === 'true') {
         $today_users = count_today_registered_users();
         $output .= '<p><i class="dashicons dashicons-groups"></i> Сегодня зарегистрировано: ' . $today_users . '</p>';
-    }
-
+    }*/
+	
     $output .= '</div>';
     
     return $output;
@@ -1199,58 +1018,6 @@ function site_statistics_styles() {
     </style>';
 }
 add_action('wp_head', 'site_statistics_styles');
-
-/*===================================================
- * Шорткод для случайной цитаты
- * ================================================== */
-function random_quote_shortcode() {
-    $quotes_file = get_template_directory() . '/quotes.txt';
-
-    if (!file_exists($quotes_file)) {
-        return 'Файл с цитатами не найден.';
-    }
-
-    $quotes = file($quotes_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-
-    if (empty($quotes)) {
-        return 'Нет доступных цитат.';
-    }
-
-    $random_quote = $quotes[array_rand($quotes)];
-    $formatted_quote = format_quote($random_quote);
-
-    return '<div class="sidebar-quote">' . $formatted_quote . '</div>';
-}
-
-function format_quote($quote, $width = 320, $font_size = 15) {
-    $quote_lines = explode("\n", $quote, 2);
-    $chars_per_line = floor($width / ($font_size / 2));
-
-    $formatted_lines = array();
-    foreach ($quote_lines as $line) {
-        $wrapped_line = wordwrap($line, $chars_per_line, "\n", true);
-        $formatted_lines[] = $wrapped_line;
-    }
-
-    return implode('<br>', $formatted_lines);
-}
-
-add_shortcode('random_quote', 'random_quote_shortcode');
-
-function add_quote_styles() {
-    echo '<style>
-        .sidebar-quote {
-            width: auto;
-            font-size: 18px;
-            line-height: 1.5;
-            padding: 10px;
-            background-color: #f0f0f0;
-            border-left: 4px solid #333;
-            margin-bottom: 20px;
-        }
-    </style>';
-}
-add_action('wp_head', 'add_quote_styles');
 
 /*===================================================
  * Шорткод "Последнее обновление"
@@ -1588,3 +1355,257 @@ function display_visitor_info() {
 
 
 add_shortcode('visitor_info', 'display_visitor_info');
+
+/*===================================================
+ * Шорткод для случайной цитаты
+ * ================================================== */
+function random_quote_shortcode() {
+    $quotes_file = get_template_directory() . '/quotes.txt';
+
+    if (!file_exists($quotes_file)) {
+        return 'Файл с цитатами не найден.';
+    }
+
+    $quotes = file($quotes_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+
+    if (empty($quotes)) {
+        return 'Нет доступных цитат.';
+    }
+
+    $random_quote = $quotes[array_rand($quotes)];
+    $formatted_quote = format_quote($random_quote);
+
+    return '<div class="sidebar-quote">' . $formatted_quote . '</div>';
+}
+
+function format_quote($quote, $width = 320, $font_size = 15) {
+    $quote_lines = explode("\n", $quote, 2);
+    $chars_per_line = floor($width / ($font_size / 2));
+
+    $formatted_lines = array();
+    foreach ($quote_lines as $line) {
+        $wrapped_line = wordwrap($line, $chars_per_line, "\n", true);
+        $formatted_lines[] = $wrapped_line;
+    }
+
+    return implode('<br>', $formatted_lines);
+}
+
+add_shortcode('random_quote', 'random_quote_shortcode');
+
+function add_quote_styles() {
+    echo '<style>
+        .sidebar-quote {
+            width: auto;
+            font-size: 18px;
+            line-height: 1.5;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-left: 4px solid #333;
+            margin-bottom: 20px;
+        }
+    </style>';
+}
+add_action('wp_head', 'add_quote_styles');
+
+
+/*===================================================
+ * Получение реального IP-адреса пользователя
+ * ================================================== */
+function get_user_real_ip() {
+    $ip_keys = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_FORWARDED', 'HTTP_X_CLUSTER_CLIENT_IP', 'HTTP_FORWARDED_FOR', 'HTTP_FORWARDED', 'REMOTE_ADDR'];
+    
+    foreach ($ip_keys as $key) {
+        if (array_key_exists($key, $_SERVER) && !empty($_SERVER[$key])) {
+            $ip = $_SERVER[$key];
+            if (strpos($ip, ',') !== false) {
+                $ip = trim(explode(',', $ip)[0]);
+            }
+            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                return $ip;
+            }
+        }
+    }
+    
+    return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+}
+
+/*===================================================
+ * Запрет множественных регистраций с одного IP
+ * ================================================== */
+ function prevent_multiple_registrations_from_same_ip($errors, $sanitized_user_login, $user_email) {
+    global $wpdb;
+    
+    $user_ip = get_user_real_ip();
+    
+    if (!filter_var($user_ip, FILTER_VALIDATE_IP)) {
+        return $errors;
+    }
+    
+    $existing_users = $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM {$wpdb->usermeta} WHERE meta_key = 'registration_ip' AND meta_value = %s",
+        $user_ip
+    ));
+    
+    if ($existing_users > 0) {
+        $errors->add('ip_already_registered', 
+            __('С этого IP-адреса уже была выполнена регистрация. Множественные регистрации запрещены.', 'textdomain')
+        );
+    }
+    
+    return $errors;
+}
+add_filter('registration_errors', 'prevent_multiple_registrations_from_same_ip', 10, 3);
+
+function save_user_registration_ip($user_id) {
+    if (!is_numeric($user_id) || $user_id <= 0) {
+        return;
+    }
+    
+    $user_ip = get_user_real_ip();
+    
+    if (filter_var($user_ip, FILTER_VALIDATE_IP)) {
+        update_user_meta($user_id, 'registration_ip', $user_ip);
+    }
+}
+add_action('user_register', 'save_user_registration_ip');
+
+
+/*===================================================
+ * Запись времени входа пользователя
+ * ================================================== */
+function record_user_login_time($user_login, $user = null) {
+    if (!$user || !is_object($user)) {
+        $user = get_user_by('login', $user_login);
+    }
+    
+    if ($user && is_object($user) && property_exists($user, 'ID') && !empty($user->ID)) {
+        $previous_login = get_user_meta($user->ID, 'last_login', true);
+        if ($previous_login) {
+            update_user_meta($user->ID, 'previous_login', $previous_login);
+        }
+        update_user_meta($user->ID, 'last_login', current_time('timestamp'));
+    }
+}
+add_action('wp_login', 'record_user_login_time', 10, 2);
+
+/*===================================================
+ * Инициализация времени входа для текущей сессии
+ * ================================================== */
+function init_current_session_login_time() {
+    if (is_user_logged_in()) {
+        $user_id = get_current_user_id();
+        $last_login = get_user_meta($user_id, 'last_login', true);
+        
+        // Если нет записи о последнем входе, записываем текущее время
+        if (!$last_login) {
+            update_user_meta($user_id, 'last_login', current_time('timestamp'));
+        }
+    }
+}
+add_action('init', 'init_current_session_login_time');
+
+/*===================================================
+ * Информация о времени входа в админ-бар
+ * ================================================== */
+function add_last_login_to_admin_bar($wp_admin_bar) {
+    if (!is_user_logged_in() || !$wp_admin_bar || !is_object($wp_admin_bar)) {
+        return;
+    }
+
+    $user_id = get_current_user_id();
+    if (!$user_id || !is_numeric($user_id)) {
+        return;
+    }
+
+    $last_login = get_user_meta($user_id, 'last_login', true);
+    $previous_login = get_user_meta($user_id, 'previous_login', true);
+    
+    // Создаем основной узел
+    $wp_admin_bar->add_node(array(
+        'id'    => 'login_times',
+        'title' => '<span class="ab-icon dashicons dashicons-clock"></span><span class="ab-label">Время входа</span>',
+        'href'  => false,
+        'meta'  => array(
+            'class' => 'login-times-menu'
+        )
+    ));
+
+    // Добавляем информацию о текущем входе
+    if ($last_login && is_numeric($last_login)) {
+        $current_time = wp_date('d.m.Y H:i', (int)$last_login);
+        $wp_admin_bar->add_node(array(
+            'id'     => 'current_login',
+            'parent' => 'login_times',
+            'title'  => 'Текущий вход: ' . $current_time,
+            'href'   => false
+        ));
+    } else {
+        // Если нет данных о текущем входе
+        $wp_admin_bar->add_node(array(
+            'id'     => 'current_login',
+            'parent' => 'login_times',
+            'title'  => 'Текущий вход: только что',
+            'href'   => false
+        ));
+    }
+
+    // Добавляем информацию о предыдущем входе
+    if ($previous_login && is_numeric($previous_login)) {
+        $previous_time = wp_date('d.m.Y H:i', (int)$previous_login);
+        $wp_admin_bar->add_node(array(
+            'id'     => 'previous_login',
+            'parent' => 'login_times',
+            'title'  => 'Предыдущий вход: ' . $previous_time,
+            'href'   => false
+        ));
+    } else {
+        // Если нет данных о предыдущем входе
+        $wp_admin_bar->add_node(array(
+            'id'     => 'previous_login',
+            'parent' => 'login_times',
+            'title'  => 'Предыдущий вход: нет данных',
+            'href'   => false
+        ));
+    }
+}
+add_action('admin_bar_menu', 'add_last_login_to_admin_bar', 100);
+
+/*===================================================
+ * Стили для админ-бара
+ * ================================================== */
+function add_last_login_styles() {
+    if (!is_admin_bar_showing()) {
+        return;
+    }
+    ?>
+    <style type="text/css">
+        #wp-admin-bar-login_times .ab-icon:before {
+            content: "\f469";
+            top: 2px;
+        }
+        #wp-admin-bar-login_times .ab-label {
+            margin-left: 6px;
+        }
+        #wp-admin-bar-login_times > .ab-item,
+        #wp-admin-bar-current_login > .ab-item,
+        #wp-admin-bar-previous_login > .ab-item {
+            cursor: default !important;
+            pointer-events: none;
+        }
+        #wp-admin-bar-login_times:hover > .ab-item,
+        #wp-admin-bar-current_login:hover > .ab-item,
+        #wp-admin-bar-previous_login:hover > .ab-item {
+            background: transparent !important;
+            color: #a0a5aa !important;
+        }
+        @media screen and (max-width: 782px) {
+            #wp-admin-bar-login_times .ab-label {
+                display: none;
+            }
+        }
+    </style>
+    <?php
+}
+add_action('wp_head', 'add_last_login_styles');
+add_action('admin_head', 'add_last_login_styles');
