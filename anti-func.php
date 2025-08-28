@@ -15,26 +15,75 @@
 Все функции реализованы безопасно и не конфликтуют между собой. Плагин особенно полезен для разработчиков, которые хотят добавить кастомный функционал без риска сломать сайт. 
  * Author: Robert Bennett
  * Plugin URI: https://github.com/RobertoBennett/anti-func
- * Version: 3.0.7
+ * Version: 3.0.9
  * Text Domain: Anti-Func
  * ==================================== */
+
+// Добавляем скрипт для проверки авторизации
+function add_auth_check_script() {
+    if (!is_admin()) {
+        $ajax_url = admin_url('admin-ajax.php');
+        $nonce = wp_create_nonce('check_auth_nonce');
+        ?>
+        <script>
+        if (typeof jQuery !== 'undefined') {
+            jQuery(document).ready(function($) {
+                // Проверяем авторизацию через AJAX
+                $.post('<?php echo esc_js($ajax_url); ?>', {
+                    action: 'check_user_auth',
+                    nonce: '<?php echo esc_js($nonce); ?>'
+                }, function(response) {
+                    if (response && response.success && response.data && response.data.logged_in) {
+                        // Обновляем элементы интерфейса для авторизованного пользователя
+                        $('body').addClass('logged-in');
+                        $('.login-link').hide();
+                        $('.logout-link').show();
+                        $('.user-info').html(response.data.user_info);
+                    }
+                });
+            });
+        }
+        </script>
+        <?php
+    }
+}
+add_action('wp_footer', 'add_auth_check_script');
+
+// AJAX обработчик для проверки авторизации
+function check_user_auth_ajax() {
+    // Проверка nonce для безопасности
+    if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'check_auth_nonce')) {
+        wp_send_json_error('Invalid nonce');
+        return;
+    }
+    
+    $response = array(
+        'logged_in' => is_user_logged_in(),
+        'user_info' => ''
+    );
+    
+    if (is_user_logged_in()) {
+        $current_user = wp_get_current_user();
+        $response['user_info'] = 'Привет, ' . esc_html($current_user->display_name);
+    }
+    
+    wp_send_json_success($response);
+}
+add_action('wp_ajax_check_user_auth', 'check_user_auth_ajax');
+add_action('wp_ajax_nopriv_check_user_auth', 'check_user_auth_ajax');
 
 /*===================================================
  *  Отключаем кэширование для авторизованных пользователей
  * ================================================== */
 
-// Устанавливаем переменную окружения для .htaccess
-function set_logged_in_env() {
+// Объединенная функция для установки заголовков для авторизованных пользователей
+function set_headers_for_logged_users() {
     if (is_user_logged_in() && !headers_sent()) {
+        // Устанавливаем переменную окружения
         header('X-Logged-In: true');
-    }
-}
-add_action('send_headers', 'set_logged_in_env');
-
-// Принудительно отключаем кэширование для авторизованных пользователей
-function disable_cache_for_logged_users_headers() {
-    if (is_user_logged_in() && !is_admin()) {
-        if (!headers_sent()) {
+        
+        // Отключаем кэширование для авторизованных пользователей
+        if (!is_admin()) {
             header('Cache-Control: no-cache, no-store, must-revalidate, max-age=0');
             header('Pragma: no-cache');
             header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
@@ -42,7 +91,7 @@ function disable_cache_for_logged_users_headers() {
         }
     }
 }
-add_action('send_headers', 'disable_cache_for_logged_users_headers');
+add_action('send_headers', 'set_headers_for_logged_users', 1);
 
 /*===================================================
  * Синхронизация состояния авторизации между админ-панелью и фронтендом
@@ -64,7 +113,7 @@ function sync_user_auth_status() {
     if (!is_admin() && is_user_logged_in()) {
         // Обновляем куки авторизации для фронтенда
         $user_id = get_current_user_id();
-        if ($user_id) {
+        if ($user_id > 0) {
             wp_set_current_user($user_id);
             
             // Принудительно обновляем сессию только если заголовки еще не отправлены
@@ -74,6 +123,7 @@ function sync_user_auth_status() {
         }
     }
 }
+add_action('init', 'sync_user_auth_status', 999);
 
 // Исправляем проблемы с сессией на главной странице админки
 function fix_admin_dashboard_session() {
@@ -84,7 +134,7 @@ function fix_admin_dashboard_session() {
         // Проверяем и восстанавливаем сессию пользователя
         if (is_user_logged_in()) {
             $user_id = get_current_user_id();
-            if ($user_id) {
+            if ($user_id > 0) {
                 // Обновляем время последней активности
                 update_user_meta($user_id, 'last_activity', time());
                 
@@ -97,14 +147,27 @@ function fix_admin_dashboard_session() {
 add_action('admin_init', 'fix_admin_dashboard_session');
 
 // Временный код для диагностики (удалите после исправления проблемы)
-function debug_admin_session() {
+/* function debug_admin_session() {
     if (is_admin() && current_user_can('manage_options')) {
         global $pagenow;
-        error_log("Admin page: $pagenow, User ID: " . get_current_user_id() . ", Session: " . session_id());
+        
+        // Получаем ID сессии безопасным способом
+        $session_status = session_status();
+        $session_id = '';
+        
+        if ($session_status === PHP_SESSION_ACTIVE) {
+            $session_id = session_id();
+        } elseif ($session_status === PHP_SESSION_NONE) {
+            $session_id = 'No session started';
+        } else {
+            $session_id = 'Session disabled';
+        }
+        
+        error_log("Admin page: $pagenow, User ID: " . get_current_user_id() . ", Session: " . $session_id);
     }
 }
 add_action('admin_init', 'debug_admin_session');
-
+*/
 /*===================================================
  * Управление HLS.js (удаление/подключение)
  * ================================================== */
@@ -1677,4 +1740,5 @@ function add_last_login_styles() {
 }
 add_action('wp_head', 'add_last_login_styles');
 add_action('admin_head', 'add_last_login_styles');
+
 
