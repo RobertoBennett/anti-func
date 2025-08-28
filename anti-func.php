@@ -20,22 +20,90 @@
  * ==================================== */
 
 /*===================================================
- *  Ккод для автоматического перенаправления
+ *  Отключаем кэширование для авторизованных пользователей
  * ================================================== */
 
-function custom_login_redirect() {
-    // Проверяем, находимся ли мы на странице входа
-    global $pagenow;
-    
-    if ($pagenow == 'wp-login.php' && is_user_logged_in()) {
-        // Проверяем, нет ли специальных параметров (logout, registration и т.д.)
-        if (!isset($_GET['action']) || $_GET['action'] == 'login') {
-            wp_redirect(admin_url());
-            exit();
+// Устанавливаем переменную окружения для .htaccess
+function set_logged_in_env() {
+    if (is_user_logged_in() && !headers_sent()) {
+        header('X-Logged-In: true');
+    }
+}
+add_action('send_headers', 'set_logged_in_env');
+
+// Принудительно отключаем кэширование для авторизованных пользователей
+function disable_cache_for_logged_users_headers() {
+    if (is_user_logged_in() && !is_admin()) {
+        if (!headers_sent()) {
+            header('Cache-Control: no-cache, no-store, must-revalidate, max-age=0');
+            header('Pragma: no-cache');
+            header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
+            header('X-Cache-Status: BYPASS');
         }
     }
 }
-add_action('init', 'custom_login_redirect');
+add_action('send_headers', 'disable_cache_for_logged_users_headers');
+
+/*===================================================
+ * Синхронизация состояния авторизации между админ-панелью и фронтендом
+ * ================================================== */
+
+// Улучшенная синхронизация состояния авторизации
+function sync_user_auth_status() {
+    // Исключаем админ-панель и AJAX запросы
+    if (is_admin() || wp_doing_ajax() || wp_doing_cron()) {
+        return;
+    }
+    
+    // Исключаем REST API запросы
+    if (defined('REST_REQUEST') && REST_REQUEST) {
+        return;
+    }
+    
+    // Только для фронтенда
+    if (!is_admin() && is_user_logged_in()) {
+        // Обновляем куки авторизации для фронтенда
+        $user_id = get_current_user_id();
+        if ($user_id) {
+            wp_set_current_user($user_id);
+            
+            // Принудительно обновляем сессию только если заголовки еще не отправлены
+            if (!headers_sent()) {
+                nocache_headers();
+            }
+        }
+    }
+}
+
+// Исправляем проблемы с сессией на главной странице админки
+function fix_admin_dashboard_session() {
+    global $pagenow;
+    
+    // Только для главной страницы админки
+    if (is_admin() && $pagenow === 'index.php') {
+        // Проверяем и восстанавливаем сессию пользователя
+        if (is_user_logged_in()) {
+            $user_id = get_current_user_id();
+            if ($user_id) {
+                // Обновляем время последней активности
+                update_user_meta($user_id, 'last_activity', time());
+                
+                // Принудительно обновляем текущего пользователя
+                wp_set_current_user($user_id);
+            }
+        }
+    }
+}
+add_action('admin_init', 'fix_admin_dashboard_session');
+
+// Временный код для диагностики (удалите после исправления проблемы)
+function debug_admin_session() {
+    if (is_admin() && current_user_can('manage_options')) {
+        global $pagenow;
+        error_log("Admin page: $pagenow, User ID: " . get_current_user_id() . ", Session: " . session_id());
+    }
+}
+add_action('admin_init', 'debug_admin_session');
 
 /*===================================================
  * Управление HLS.js (удаление/подключение)
@@ -1609,3 +1677,4 @@ function add_last_login_styles() {
 }
 add_action('wp_head', 'add_last_login_styles');
 add_action('admin_head', 'add_last_login_styles');
+
